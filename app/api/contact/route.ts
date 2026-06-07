@@ -75,8 +75,14 @@ export async function POST(request: Request) {
   );
 
   if (!telegramResponse.ok) {
+    const telegramError = await telegramResponse.json().catch(() => null);
+    const description =
+      typeof telegramError?.description === "string"
+        ? telegramError.description
+        : "Telegramga yuborishda xatolik yuz berdi.";
+
     return NextResponse.json(
-      { error: "Telegramga yuborishda xatolik yuz berdi." },
+      { error: description },
       { status: 502 }
     );
   }
