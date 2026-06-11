@@ -24,6 +24,7 @@ async def main() -> None:
 
     await countdown.start()
     await countdown.restore_active_tasks()
+    await countdown.restore_task_notifications()
 
     try:
         await bot.delete_webhook(drop_pending_updates=True)

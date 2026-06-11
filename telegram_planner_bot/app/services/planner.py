@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.planner import Task, TaskLog
@@ -38,6 +38,7 @@ class PlannerService:
         start_time: time,
         end_time: time,
         repeat_daily: bool,
+        telegram_chat_id: int | None = None,
     ) -> Task:
         task = Task(
             telegram_user_id=telegram_user_id,
@@ -47,6 +48,7 @@ class PlannerService:
             end_time=end_time,
             repeat_daily=repeat_daily,
             status="planned",
+            telegram_chat_id=telegram_chat_id,
         )
         self.session.add(task)
         await self.session.commit()
@@ -62,7 +64,13 @@ class PlannerService:
             select(Task)
             .where(
                 Task.telegram_user_id == telegram_user_id,
-                or_(Task.date == target_date, Task.repeat_daily.is_(True)),
+                or_(
+                    Task.date == target_date,
+                    and_(
+                        Task.repeat_daily.is_(True),
+                        Task.date <= target_date,
+                    ),
+                ),
             )
             .order_by(Task.start_time.asc(), Task.id.asc())
         )
@@ -229,6 +237,50 @@ class PlannerService:
         )
         rows = (await self.session.execute(statement)).all()
         return [TaskWithLog(task=row[0], log=row[1]) for row in rows]
+
+    async def notification_tasks(self, target_date: date) -> list[Task]:
+        statement = (
+            select(Task)
+            .where(
+                or_(
+                    Task.repeat_daily.is_(True),
+                    Task.date >= target_date,
+                )
+            )
+            .order_by(Task.date.asc(), Task.start_time.asc())
+        )
+        return list((await self.session.scalars(statement)).all())
+
+    async def prepare_notification(
+        self,
+        task_id: int,
+        target_date: date,
+    ) -> TaskWithLog | None:
+        task = await self.session.get(Task, task_id)
+        if task is None:
+            return None
+        if target_date < task.date:
+            return None
+        if not task.repeat_daily and target_date != task.date:
+            return None
+
+        log = await self._get_or_create_log(task.id, target_date)
+        if log.status != "planned" or log.notified_at is not None:
+            return None
+
+        await self.session.commit()
+        return TaskWithLog(task=task, log=log)
+
+    async def mark_notification_sent(
+        self,
+        log_id: int,
+        notified_at: datetime,
+    ) -> None:
+        log = await self.session.get(TaskLog, log_id)
+        if log is None:
+            return
+        log.notified_at = notified_at
+        await self.session.commit()
 
     async def _get_task(
         self,
