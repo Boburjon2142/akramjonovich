@@ -7,6 +7,7 @@ Portfolio va boshqa botlardan mustaqil ishlaydigan sodda kunlik vazifalar boti.
 - Vazifa qo‘shish
 - Bugungi vazifalarni ko‘rish
 - Vazifani boshlash va tugatish
+- Bir martalik va har kunlik vazifa vaqti kelganda eslatma yuborish
 - Qolgan vaqtni har daqiqada yangilash
 - Vazifani o‘chirish
 - Har kuni takrorlanadigan vazifa
@@ -26,10 +27,10 @@ Copy-Item .env.example .env
 
 ## Migration
 
-Migration nomi:
+Oxirgi migration:
 
 ```text
-20260610_0001_create_planner_tables
+20260611_0002_add_notification_tracking
 ```
 
 Migrationni qo‘llash:

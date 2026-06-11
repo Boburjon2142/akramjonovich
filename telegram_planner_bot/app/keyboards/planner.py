@@ -87,3 +87,16 @@ def done_keyboard(task_id: int, expired: bool = False) -> InlineKeyboardMarkup:
         ]
     )
 
+
+def reminder_keyboard(task_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Boshlash",
+                    callback_data=f"planner_start:{task_id}",
+                )
+            ]
+        ]
+    )
+

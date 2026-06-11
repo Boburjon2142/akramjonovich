@@ -145,6 +145,7 @@ async def receive_time_range(
 async def receive_repeat(
     message: types.Message,
     state: FSMContext,
+    countdown: CountdownService,
 ) -> None:
     data = await state.get_data()
     task_date = parse_date(data["task_date"])
@@ -169,7 +170,9 @@ async def receive_repeat(
             start_time=start_time,
             end_time=end_time,
             repeat_daily=message.text == "Ha",
+            telegram_chat_id=message.chat.id,
         )
+    await countdown.schedule_task_notification(task)
 
     await state.clear()
     await message.answer(
@@ -353,6 +356,7 @@ async def delete_task_callback(
         return
     if active:
         countdown.stop(active.log.id)
+    countdown.stop_task_notification(task_id)
 
     async with session_factory() as session:
         items = await PlannerService(session).list_for_date(
