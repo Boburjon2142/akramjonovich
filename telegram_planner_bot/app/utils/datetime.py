@@ -48,6 +48,14 @@ def format_remaining(end_at: datetime, now: datetime | None = None) -> str:
 
 def format_duration(started_at: datetime, finished_at: datetime) -> str:
     minutes = max(0, int((finished_at - started_at).total_seconds() // 60))
+    return format_seconds(minutes * 60)
+
+
+def format_seconds(seconds: int) -> str:
+    seconds = max(0, seconds)
+    if seconds < 60:
+        return f"{seconds} soniya"
+    minutes = seconds // 60
     hours, minutes = divmod(minutes, 60)
     if hours and minutes:
         return f"{hours} soat {minutes} daqiqa"

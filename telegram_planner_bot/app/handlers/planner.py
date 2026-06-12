@@ -8,30 +8,31 @@ from app.database import session_factory
 from app.keyboards.planner import (
     ACTIVE_TASK,
     ADD_TASK,
+    DAILY_REPORT,
+    MONTHLY_REPORT,
+    REPORTS,
     TODAY_TASKS,
     date_keyboard,
-    done_keyboard,
     main_menu_keyboard,
     remove_keyboard,
     repeat_keyboard,
+    reports_keyboard,
+    task_control_keyboard,
     task_list_keyboard,
 )
 from app.services.countdown import CountdownService
 from app.services.planner import (
     ActiveTaskExistsError,
     PlannerService,
+    ReportEntry,
     TaskAlreadyDoneError,
     TaskNotFoundError,
+    TaskNotPausedError,
     TaskWithLog,
 )
 from app.services.presentation import STATUS_LABELS, active_task_text
 from app.states.planner import AddTaskStates
-from app.utils.datetime import (
-    format_duration,
-    local_now,
-    parse_date,
-    parse_time_range,
-)
+from app.utils.datetime import format_seconds, local_now, parse_date, parse_time_range
 
 
 router = Router(name="planner")
@@ -212,13 +213,56 @@ async def today_tasks(message: types.Message) -> None:
     )
 
 
+@router.message(F.text == REPORTS)
+async def reports(message: types.Message) -> None:
+    await message.answer(
+        "Hisobot turini tanlang:",
+        reply_markup=reports_keyboard(),
+    )
+
+
+@router.message(F.text == DAILY_REPORT)
+async def daily_report(message: types.Message) -> None:
+    today = local_now().date()
+    async with session_factory() as session:
+        entries = await PlannerService(session).daily_report(
+            message.from_user.id,
+            today,
+        )
+    await message.answer(
+        render_report(f"Bugungi hisobot ({today.isoformat()})", entries),
+        reply_markup=main_menu_keyboard(),
+    )
+
+
+@router.message(F.text == MONTHLY_REPORT)
+async def monthly_report(message: types.Message) -> None:
+    now = local_now()
+    async with session_factory() as session:
+        entries = await PlannerService(session).monthly_report(
+            message.from_user.id,
+            now.year,
+            now.month,
+        )
+    await message.answer(
+        render_report(f"Oylik hisobot ({now:%Y-%m})", entries),
+        reply_markup=main_menu_keyboard(),
+    )
+
+
 @router.message(F.text == ACTIVE_TASK)
 async def active_task(
     message: types.Message,
     countdown: CountdownService,
 ) -> None:
     async with session_factory() as session:
-        item = await PlannerService(session).get_active(message.from_user.id)
+        service = PlannerService(session)
+        item = await service.get_active(message.from_user.id)
+        elapsed = (
+            await service.elapsed_seconds(item.log.id)
+            if item is not None
+            else 0
+        )
 
     if item is None:
         await message.answer(
@@ -227,10 +271,14 @@ async def active_task(
         )
         return
 
-    text, expired = active_task_text(item.task, item.log)
+    text, expired = active_task_text(item.task, item.log, elapsed)
     sent = await message.answer(
         text,
-        reply_markup=done_keyboard(item.task.id, expired),
+        reply_markup=task_control_keyboard(
+            item.task.id,
+            item.log.status,
+            expired,
+        ),
     )
 
     async with session_factory() as session:
@@ -240,7 +288,7 @@ async def active_task(
             sent.chat.id,
             sent.message_id,
         )
-    if not expired:
+    if item.log.status == "active" and not expired:
         countdown.schedule(item.log.id)
 
 
@@ -256,11 +304,13 @@ async def start_task_callback(
 
     try:
         async with session_factory() as session:
-            item = await PlannerService(session).start_task(
+            service = PlannerService(session)
+            item = await service.start_task(
                 task_id,
                 callback.from_user.id,
                 local_now().date(),
             )
+            elapsed = await service.elapsed_seconds(item.log.id)
     except TaskNotFoundError:
         await callback.answer("Vazifa topilmadi", show_alert=True)
         return
@@ -277,10 +327,14 @@ async def start_task_callback(
         )
         return
 
-    text, expired = active_task_text(item.task, item.log)
+    text, expired = active_task_text(item.task, item.log, elapsed)
     sent = await callback.message.answer(
         text,
-        reply_markup=done_keyboard(item.task.id, expired),
+        reply_markup=task_control_keyboard(
+            item.task.id,
+            item.log.status,
+            expired,
+        ),
     )
     async with session_factory() as session:
         await PlannerService(session).save_message(
@@ -292,6 +346,77 @@ async def start_task_callback(
     if not expired:
         countdown.schedule(item.log.id)
     await callback.answer("Vazifa boshlandi")
+
+
+@router.callback_query(F.data.startswith("planner_pause:"))
+async def pause_task_callback(
+    callback: types.CallbackQuery,
+    countdown: CountdownService,
+) -> None:
+    task_id = parse_callback_id(callback.data)
+    if task_id is None:
+        await callback.answer("Vazifa topilmadi", show_alert=True)
+        return
+
+    try:
+        async with session_factory() as session:
+            service = PlannerService(session)
+            item = await service.pause_task(task_id, callback.from_user.id)
+            elapsed = await service.elapsed_seconds(item.log.id)
+    except TaskNotFoundError:
+        await callback.answer("Faol vazifa topilmadi", show_alert=True)
+        return
+
+    countdown.stop(item.log.id)
+    text, expired = active_task_text(item.task, item.log, elapsed)
+    await callback.message.edit_text(
+        text,
+        reply_markup=task_control_keyboard(
+            item.task.id,
+            item.log.status,
+            expired,
+        ),
+    )
+    await callback.answer("Vazifa pauzaga qo'yildi")
+
+
+@router.callback_query(F.data.startswith("planner_resume:"))
+async def resume_task_callback(
+    callback: types.CallbackQuery,
+    countdown: CountdownService,
+) -> None:
+    task_id = parse_callback_id(callback.data)
+    if task_id is None:
+        await callback.answer("Vazifa topilmadi", show_alert=True)
+        return
+
+    try:
+        async with session_factory() as session:
+            service = PlannerService(session)
+            item = await service.resume_task(task_id, callback.from_user.id)
+            elapsed = await service.elapsed_seconds(item.log.id)
+    except TaskNotPausedError:
+        await callback.answer("Pauzadagi vazifa topilmadi", show_alert=True)
+        return
+    except ActiveTaskExistsError:
+        await callback.answer(
+            "Avval boshqa faol vazifani tugating.",
+            show_alert=True,
+        )
+        return
+
+    text, expired = active_task_text(item.task, item.log, elapsed)
+    await callback.message.edit_text(
+        text,
+        reply_markup=task_control_keyboard(
+            item.task.id,
+            item.log.status,
+            expired,
+        ),
+    )
+    if not expired:
+        countdown.schedule(item.log.id)
+    await callback.answer("Vazifa davom ettirildi")
 
 
 @router.callback_query(F.data.startswith("planner_done:"))
@@ -306,10 +431,12 @@ async def finish_task_callback(
 
     try:
         async with session_factory() as session:
-            item = await PlannerService(session).finish_task(
+            service = PlannerService(session)
+            item = await service.finish_task(
                 task_id,
                 callback.from_user.id,
             )
+            elapsed = await service.elapsed_seconds(item.log.id)
     except TaskNotFoundError:
         await callback.answer("Vazifa topilmadi", show_alert=True)
         return
@@ -321,11 +448,10 @@ async def finish_task_callback(
         return
 
     countdown.stop(item.log.id)
-    duration = format_duration(item.log.started_at, item.log.finished_at)
     await callback.message.edit_text(
         "✅ Vazifa tugatildi:\n"
         f"{item.task.title}\n\n"
-        f"Sarflangan vaqt: {duration}"
+        f"Sarflangan vaqt: {format_seconds(elapsed)}"
     )
     await callback.answer("Vazifa tugatildi")
 
@@ -395,3 +521,28 @@ def render_task_list(items: list[TaskWithLog]) -> tuple[str, list[int]]:
             ]
         )
     return "\n".join(lines).rstrip(), [item.task.id for item in items]
+
+
+def render_report(title: str, entries: list[ReportEntry]) -> str:
+    if not entries:
+        return f"{title}\n\nHozircha sarflangan vaqt yo'q."
+
+    ordered = sorted(
+        entries,
+        key=lambda entry: entry.total_seconds,
+        reverse=True,
+    )
+    total = sum(entry.total_seconds for entry in ordered)
+    lines = [title, ""]
+    for index, entry in enumerate(ordered, start=1):
+        completed = (
+            f" | {entry.completed_count} marta tugatilgan"
+            if entry.completed_count
+            else ""
+        )
+        lines.append(
+            f"{index}. {entry.title}: "
+            f"{format_seconds(entry.total_seconds)}{completed}"
+        )
+    lines.extend(["", f"Jami: {format_seconds(total)}"])
+    return "\n".join(lines)

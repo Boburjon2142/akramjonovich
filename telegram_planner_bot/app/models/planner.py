@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Time,
     UniqueConstraint,
@@ -33,6 +34,10 @@ class Task(Base):
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     telegram_message_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        nullable=True,
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -83,9 +88,37 @@ class TaskLog(Base):
     )
 
     task: Mapped[Task] = relationship(back_populates="logs")
+    sessions: Mapped[list["TaskSession"]] = relationship(
+        back_populates="log",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         UniqueConstraint("task_id", "date", name="uq_planner_task_log_date"),
         Index("ix_planner_log_status_date", "status", "date"),
+    )
+
+
+class TaskSession(Base):
+    __tablename__ = "planner_task_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_log_id: Mapped[int] = mapped_column(
+        ForeignKey("planner_task_logs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+    )
+
+    log: Mapped[TaskLog] = relationship(back_populates="sessions")
+
+    __table_args__ = (
+        Index("ix_planner_session_log_started", "task_log_id", "started_at"),
     )
 
