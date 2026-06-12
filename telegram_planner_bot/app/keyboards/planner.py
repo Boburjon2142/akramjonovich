@@ -10,6 +10,9 @@ from aiogram.types import (
 TODAY_TASKS = "📋 Bugungi vazifalar"
 ADD_TASK = "➕ Vazifa qo‘shish"
 ACTIVE_TASK = "⏳ Faol vazifa"
+REPORTS = "📊 Hisobotlar"
+DAILY_REPORT = "📅 Bugungi hisobot"
+MONTHLY_REPORT = "🗓 Oylik hisobot"
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
@@ -20,6 +23,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text=ADD_TASK),
                 KeyboardButton(text=ACTIVE_TASK),
             ],
+            [KeyboardButton(text=REPORTS)],
         ],
         resize_keyboard=True,
     )
@@ -74,17 +78,50 @@ def task_list_keyboard(task_ids: list[int]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def done_keyboard(task_id: int, expired: bool = False) -> InlineKeyboardMarkup:
-    label = "✅ Tugatdim" if expired else "✅ Tugatish"
+def task_control_keyboard(
+    task_id: int,
+    status: str,
+    expired: bool = False,
+) -> InlineKeyboardMarkup:
+    if status == "paused":
+        action = InlineKeyboardButton(
+            text="▶️ Davom ettirish",
+            callback_data=f"planner_resume:{task_id}",
+        )
+    else:
+        action = InlineKeyboardButton(
+            text="⏸ Pauza",
+            callback_data=f"planner_pause:{task_id}",
+        )
+
+    finish_label = "✅ Tugatdim" if expired else "✅ Tugatish"
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [action],
             [
                 InlineKeyboardButton(
-                    text=label,
+                    text=finish_label,
                     callback_data=f"planner_done:{task_id}",
                 )
-            ]
+            ],
         ]
+    )
+
+
+def done_keyboard(task_id: int, expired: bool = False) -> InlineKeyboardMarkup:
+    return task_control_keyboard(task_id, "active", expired)
+
+
+def reports_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text=DAILY_REPORT),
+                KeyboardButton(text=MONTHLY_REPORT),
+            ],
+            [KeyboardButton(text=TODAY_TASKS)],
+        ],
+        resize_keyboard=True,
     )
 
 
@@ -99,4 +136,3 @@ def reminder_keyboard(task_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
-

@@ -8,7 +8,7 @@ import pytz
 
 from app.config import settings
 from app.database import session_factory
-from app.keyboards.planner import done_keyboard, reminder_keyboard
+from app.keyboards.planner import reminder_keyboard, task_control_keyboard
 from app.models.planner import Task
 from app.services.planner import PlannerService
 from app.services.presentation import active_task_text
@@ -169,6 +169,11 @@ class CountdownService:
                 .where(TaskLog.id == log_id, TaskLog.status == "active")
             )
             row = (await session.execute(statement)).first()
+            elapsed = (
+                await PlannerService(session).elapsed_seconds(row[1].id)
+                if row is not None
+                else 0
+            )
 
         if row is None:
             self.stop(log_id)
@@ -179,13 +184,17 @@ class CountdownService:
             self.stop(log_id)
             return
 
-        text, expired = active_task_text(task, log)
+        text, expired = active_task_text(task, log, elapsed)
         try:
             await self.bot.edit_message_text(
                 chat_id=log.telegram_chat_id,
                 message_id=log.telegram_message_id,
                 text=text,
-                reply_markup=done_keyboard(task.id, expired),
+                reply_markup=task_control_keyboard(
+                    task.id,
+                    log.status,
+                    expired,
+                ),
             )
         except TelegramBadRequest as error:
             if "message is not modified" not in str(error).lower():

@@ -7,6 +7,9 @@ Portfolio va boshqa botlardan mustaqil ishlaydigan sodda kunlik vazifalar boti.
 - Vazifa qo‘shish
 - Bugungi vazifalarni ko‘rish
 - Vazifani boshlash va tugatish
+- Vazifani pauza qilish va davom ettirish
+- Kunlik va oylik sarflangan vaqt hisobotlari
+- Oylik hisobotda bir xil nomli vazifalarni jamlash
 - Bir martalik va har kunlik vazifa vaqti kelganda eslatma yuborish
 - Qolgan vaqtni har daqiqada yangilash
 - Vazifani o‘chirish
@@ -30,7 +33,7 @@ Copy-Item .env.example .env
 Oxirgi migration:
 
 ```text
-20260611_0002_add_notification_tracking
+20260611_0003_add_task_sessions
 ```
 
 Migrationni qo‘llash:
