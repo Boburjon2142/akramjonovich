@@ -182,14 +182,14 @@ export default function Footer() {
                 boburjonabduganiyev83@gmail.com
               </a>
               <a
-                href="tel:+998901234567"
+                href="tel:+998919630770"
                 className="flex items-center gap-2 font-body text-sm transition-colors duration-200"
                 style={{ color: "var(--text-muted)" }}
                 onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-primary)")}
                 onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-muted)")}
               >
                 <Phone size={13} />
-                +998 90 123 45 67
+                +998 91 963 07 70
               </a>
               <div className="flex items-center gap-2 font-body text-sm" style={{ color: "var(--text-muted)" }}>
                 <MapPin size={13} />
